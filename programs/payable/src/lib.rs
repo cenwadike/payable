@@ -103,7 +103,6 @@ pub mod payable {
     }
 
     pub fn cancel_payable(ctx: Context<CancelPayable>) -> Result<()> {
-        // let payable = &mut ctx.accounts.payable;
         let clock = Clock::get()?;
 
         // only valid payer can cancel payable
@@ -222,6 +221,9 @@ pub mod payable {
                 )?;
             }
         } else {
+            // update payable status
+            ctx.accounts.payable.status = 0;
+
             // if cancel period is not over, transfer 100% to payer
             if ctx.accounts.payable.number_of_recurrent_payment > 0 {
                 let number_of_recurrent_payment_left =
@@ -254,6 +256,90 @@ pub mod payable {
                     ctx.accounts.payable.amount as u64,
                 )?;
             }
+
+        }
+
+        Ok(())
+    }
+
+    pub fn withdraw(ctx: Context<WithdrawFromPayable>) -> Result<()> {
+        let clock = Clock::get()?;
+
+        // only creator can withdraw
+        require_keys_eq!(ctx.accounts.payable.creator, ctx.accounts.signer.key());
+
+        // withdraw can happen after cancel period
+        require!(
+            clock.unix_timestamp >= ctx.accounts.payable.cancel_period,
+            Error::WithdrawalTimeNotReached
+        );
+
+        // payable must have been accepted
+        require_eq!(ctx.accounts.payable.status, 1);
+
+        // must have pending withdrawal
+        require!(ctx.accounts.payable.number_of_recurrent_payment > 0, Error::CompletedPayble);
+
+        // get signer seed
+        let bump = ctx.bumps.payable;
+        let payee_seed = ctx.accounts.signer.key();
+        let payer_seed = ctx.accounts.payer.key();
+
+        let seeds = &[
+            &b"payable"[..],
+            payee_seed.as_ref(),
+            payer_seed.as_ref(),
+            &[bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        // if payment is recurrent, check how many payment is left to be withdrawn
+        // transfer amount * number of payment not withdrawn
+        if ctx.accounts.payable.number_of_recurrent_payment > 1 {
+            let last_withdrawal_period = clock.unix_timestamp.checked_sub(ctx.accounts.payable.last_withdrawal).expect("msg");
+            let missed_payment_withdrawal = last_withdrawal_period.checked_div(ctx.accounts.payable.recurrent_payment_interval).expect("msg");
+            
+            let amount_to_transfer = missed_payment_withdrawal * ctx.accounts.payable.amount;
+
+            // update payment remaining
+            ctx.accounts.payable.number_of_recurrent_payment = ctx.accounts.payable.number_of_recurrent_payment.checked_sub(missed_payment_withdrawal).expect("msg");
+            
+            // transfer amount_to_transfer to payee
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.payable_ata.to_account_info(),
+                to: ctx.accounts.payee_ata.to_account_info(),
+                authority: ctx.accounts.payable.to_account_info(),
+            };
+            let cpi_program = ctx.accounts.valid_token_mint.to_account_info();
+            transfer(
+                CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds),
+                amount_to_transfer as u64,
+            )?;
+        } else {
+            // update payment remaining
+            ctx.accounts.payable.number_of_recurrent_payment = ctx.accounts.payable.number_of_recurrent_payment - 1;
+
+            // update status 
+            ctx.accounts.payable.status = 2;
+
+            // transfer amount to payee
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.payable_ata.to_account_info(),
+                to: ctx.accounts.payee_ata.to_account_info(),
+                authority: ctx.accounts.payable.to_account_info(),
+            };
+            let cpi_program = ctx.accounts.valid_token_mint.to_account_info();
+            transfer(
+                CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds),
+                ctx.accounts.payable.amount as u64,
+            )?;
+
+            emit!(PayableCompleted{
+                payable_idx: ctx.accounts.payable.payable_idx,
+                creator: ctx.accounts.payable.creator,
+                payer: ctx.accounts.payer.key(),
+                valid_token: ctx.accounts.payable.valid_payment_token,
+            })
         }
 
         Ok(())
@@ -380,6 +466,41 @@ pub struct CancelPayable<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct WithdrawFromPayable<'info> {
+    #[account(
+        mut,
+        seeds = [
+            b"payable",
+            signer.key().as_ref(),
+            payer.key().as_ref(),
+        ],
+        bump
+    )]
+    pub payable: Account<'info, Payable>,
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: safe
+    #[account(mut)]
+    pub payer: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub valid_token_mint: Account<'info, Mint>,
+
+    // payer valid token ATA
+    #[account(mut)]
+    pub payee_ata: Account<'info, TokenAccount>,
+
+    // vault valid token ATA
+    #[account(mut)]
+    pub payable_ata: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+    // account holding the contract binary
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct Counter {
     pub payable_idx_counter: u64,
@@ -464,4 +585,6 @@ pub struct PayableCompleted {
 #[error_code]
 pub enum Error {
     CyclicPayable,
+    WithdrawalTimeNotReached,
+    CompletedPayble
 }

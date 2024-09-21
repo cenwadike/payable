@@ -2,8 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Payable } from "../target/types/payable";
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, Signer, SystemProgram } from "@solana/web3.js";
-import { createMint, getAccount, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID, transfer } from "@solana/spl-token";
-import { assert } from "chai";
+import { createMint, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID, transfer } from "@solana/spl-token";
 
 const TestProgram = async () => {
   // Configure the client to use the local cluster.
@@ -141,15 +140,15 @@ const TestProgram = async () => {
   console.log("-----------------------PAYABLE ATA ADDRESS: ", payerAta.address.toBase58());
   console.log("-----------------------PAYEE ATA ADDRESS: ", payeeAta.address.toBase58());
 
-  // console.log("-----------------------STARTING INITIALIZATION--------------------------");
-  // const initTx = await program.methods.initialize().accounts(
-  //   {
-  //     counter: counterPDA,
-  //     signer: admin.publicKey,
-  //     systemProgram: SystemProgram.programId
-  //   }
-  // ).signers([adminSig]).rpc();
-  // console.log("-----------------------INITIALIZATION SUCCESSFUL:", initTx.toString());
+  console.log("-----------------------STARTING INITIALIZATION--------------------------");
+  const initTx = await program.methods.initialize().accounts(
+    {
+      counter: counterPDA,
+      signer: admin.publicKey,
+      systemProgram: SystemProgram.programId
+    }
+  ).signers([adminSig]).rpc();
+  console.log("-----------------------INITIALIZATION SUCCESSFUL:", initTx.toString());
 
   console.log("-----------------------STARTING PAYABLE CREATION--------------------------");
   const createPayableTx = await program.methods.createPayable(
@@ -184,8 +183,7 @@ const TestProgram = async () => {
   console.log("-----------------------PAYABLE ACCEPTANCE SUCCESSFUL:", acceptPayableTx.toString());
   
   console.log("-----------------------STARTING PAYABLE CANCELATION--------------------------");
-  const cancelPayableTx = await program.methods.cancelPayable(
-  ).accounts({
+  const cancelPayableTx = await program.methods.cancelPayable().accounts({
     payable: payablePDA,
     signer: payer.publicKey,
     payee: payee.publicKey,
@@ -197,6 +195,21 @@ const TestProgram = async () => {
     systemProgram: SystemProgram.programId
   }).signers([payerSig]).rpc()
   console.log("-----------------------PAYABLE CANCELATION SUCCESSFUL:", cancelPayableTx.toString());
+  
+  console.log("-----------------------STARTING PAYABLE WITHDRAWAL--------------------------");
+  sleep(3000);
+  const withdrawTx = await program.methods.withdraw().accounts({
+    payable: payablePDA,
+    signer: payee.publicKey,
+    payer: payer.publicKey,
+    validTokenMint: token,
+    payeeAta: payeeAta.address,
+    payableAta: payableAta.address,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId
+  }).signers([payeeSig]).rpc()
+  console.log("-----------------------PAYABLE WITHDRAWAL SUCCESSFUL:", withdrawTx.toString());
+
 };
 
 const runTest = async () => {
@@ -210,3 +223,7 @@ const runTest = async () => {
 }
 
 runTest()
+
+function sleep(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}
