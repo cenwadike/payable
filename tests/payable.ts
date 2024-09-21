@@ -43,9 +43,9 @@ const TestProgram = async () => {
     program.programId
   )
 
-  const [invoicePDA, _f] = PublicKey.findProgramAddressSync(
+  const [payablePDA, _f] = PublicKey.findProgramAddressSync(
     [
-      anchor.utils.bytes.utf8.encode("invoice"),
+      anchor.utils.bytes.utf8.encode("payable"),
       payee.publicKey.toBuffer(),
       payer.publicKey.toBuffer(),
     ],
@@ -120,7 +120,7 @@ const TestProgram = async () => {
 
   const payeeAta = await getOrCreateAssociatedTokenAccount(connection, payer, token, payee.publicKey);
   const payerAta = await getOrCreateAssociatedTokenAccount(connection, payer, token, payer.publicKey);
-  const invoiceAta = await getOrCreateAssociatedTokenAccount(connection, payer, token, invoicePDA, true);
+  const payableAta = await getOrCreateAssociatedTokenAccount(connection, payer, token, payablePDA, true);
 
   // transfer some token to payer 
   await transfer(
@@ -137,10 +137,9 @@ const TestProgram = async () => {
   console.log("-----------------------PAYER ADDRESS: ", payer.publicKey.toBase58());
   console.log("-----------------------VALID TOKEN MINT: ", token.toBase58());
   console.log("-----------------------COUNTER PDA ADDRESS: ", counterPDA.toBase58());
-  console.log("-----------------------PAYER ATA ADDRESS: ", invoiceAta.address.toBase58());
-  console.log("-----------------------INVOICE ATA ADDRESS: ", payerAta.address.toBase58());
+  console.log("-----------------------PAYER ATA ADDRESS: ", payableAta.address.toBase58());
+  console.log("-----------------------PAYABLE ATA ADDRESS: ", payerAta.address.toBase58());
   console.log("-----------------------PAYEE ATA ADDRESS: ", payeeAta.address.toBase58());
-
 
   // console.log("-----------------------STARTING INITIALIZATION--------------------------");
   // const initTx = await program.methods.initialize().accounts(
@@ -152,8 +151,8 @@ const TestProgram = async () => {
   // ).signers([adminSig]).rpc();
   // console.log("-----------------------INITIALIZATION SUCCESSFUL:", initTx.toString());
 
-  console.log("-----------------------STARTING INVOICE CREATION--------------------------");
-  const createInvoiceTx = await program.methods.createInvoice(
+  console.log("-----------------------STARTING PAYABLE CREATION--------------------------");
+  const createPayableTx = await program.methods.createPayable(
     new anchor.BN(1),
     false,
     new anchor.BN(1),
@@ -161,65 +160,43 @@ const TestProgram = async () => {
     new anchor.BN(1)
   ).accounts({
     counter: counterPDA,
-    invoice: invoicePDA,
+    payable: payablePDA,
     signer: payee.publicKey,
     payer: payer.publicKey,
     validTokenMint: token,
     systemProgram: SystemProgram.programId
   }).signers([payeeSig]).rpc()
-  console.log("-----------------------INVOICE CREATION SUCCESSFUL:", createInvoiceTx.toString());
+  console.log("-----------------------PAYABLE CREATION SUCCESSFUL:", createPayableTx.toString());
 
-  console.log("-----------------------STARTING INVOICE ACCEPTANCE--------------------------");
-  const acceptInvoiceTx = await program.methods.acceptInvoice(
+  console.log("-----------------------STARTING PAYABLE ACCEPTANCE--------------------------");
+  const acceptPayableTx = await program.methods.acceptPayable(
     false
   ).accounts({
-    invoice: invoicePDA,
+    payable: payablePDA,
     signer: payer.publicKey,
     payee: payee.publicKey,
     validTokenMint: token,
     payerAta: payerAta.address,
-    invoiceAta: invoiceAta.address,
+    payableAta: payableAta.address,
     tokenProgram: TOKEN_PROGRAM_ID,
     systemProgram: SystemProgram.programId
   }).signers([payerSig]).rpc()
-  console.log("-----------------------INVOICE ACCEPTANCE SUCCESSFUL:", acceptInvoiceTx.toString());
-  const latestBlockHash = await connection.getLatestBlockhash();
-  await connection.confirmTransaction(
-    {
-      blockhash: latestBlockHash.blockhash,
-      lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-      signature: acceptInvoiceTx,
-    },
-    "confirmed"
-  );
-
-  const txDetails = await program.provider.connection.getTransaction(acceptInvoiceTx, {
-    maxSupportedTransactionVersion: 0,
-    commitment: "confirmed",
-  });
-
-  const logs = txDetails.meta || null;
-
-  if (!logs) {
-    console.log("No logs found");
-  }
-
-  console.log(`prebalance:`, logs.preTokenBalances)
-  console.log(`postbalance: `, logs.postTokenBalances)
-
-  // console.log("-----------------------STARTING INVOICE ACCEPTANCE--------------------------");
-  // const cancelInvoiceTx = await program.methods.acceptInvoice(
-  //   false
-  // ).accounts({
-  //   invoice: invoicePDA,
-  //   signer: payer.publicKey,
-  //   payee: payee.publicKey,
-  //   payerAta: payerAta.address,
-  //   invoiceAta: invoiceAta.address,
-  //   tokenProgram: TOKEN_PROGRAM_ID,
-  //   systemProgram: SystemProgram.programId
-  // }).signers([payerSig]).rpc()
-  // console.log("-----------------------INVOICE ACCEPTANCE SUCCESSFUL:", cancelInvoiceTx.toString());
+  console.log("-----------------------PAYABLE ACCEPTANCE SUCCESSFUL:", acceptPayableTx.toString());
+  
+  console.log("-----------------------STARTING PAYABLE CANCELATION--------------------------");
+  const cancelPayableTx = await program.methods.cancelPayable(
+  ).accounts({
+    payable: payablePDA,
+    signer: payer.publicKey,
+    payee: payee.publicKey,
+    validTokenMint: token,
+    payeeAta: payeeAta.address,
+    payerAta: payerAta.address,
+    payableAta: payableAta.address,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId
+  }).signers([payerSig]).rpc()
+  console.log("-----------------------PAYABLE CANCELATION SUCCESSFUL:", cancelPayableTx.toString());
 };
 
 const runTest = async () => {
