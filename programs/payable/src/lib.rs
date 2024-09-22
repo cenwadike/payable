@@ -256,7 +256,6 @@ pub mod payable {
                     ctx.accounts.payable.amount as u64,
                 )?;
             }
-
         }
 
         Ok(())
@@ -278,7 +277,10 @@ pub mod payable {
         require_eq!(ctx.accounts.payable.status, 1);
 
         // must have pending withdrawal
-        require!(ctx.accounts.payable.number_of_recurrent_payment > 0, Error::CompletedPayble);
+        require!(
+            ctx.accounts.payable.number_of_recurrent_payment > 0,
+            Error::CompletedPayable
+        );
 
         // get signer seed
         let bump = ctx.bumps.payable;
@@ -296,14 +298,24 @@ pub mod payable {
         // if payment is recurrent, check how many payment is left to be withdrawn
         // transfer amount * number of payment not withdrawn
         if ctx.accounts.payable.number_of_recurrent_payment > 1 {
-            let last_withdrawal_period = clock.unix_timestamp.checked_sub(ctx.accounts.payable.last_withdrawal).expect("msg");
-            let missed_payment_withdrawal = last_withdrawal_period.checked_div(ctx.accounts.payable.recurrent_payment_interval).expect("msg");
-            
+            let last_withdrawal_period = clock
+                .unix_timestamp
+                .checked_sub(ctx.accounts.payable.last_withdrawal)
+                .expect("Payable::Functions::Withdraw::Overflow Error");
+            let missed_payment_withdrawal = last_withdrawal_period
+                .checked_div(ctx.accounts.payable.recurrent_payment_interval)
+                .expect("Payable::Functions::Withdraw::Overflow Error");
+
             let amount_to_transfer = missed_payment_withdrawal * ctx.accounts.payable.amount;
 
             // update payment remaining
-            ctx.accounts.payable.number_of_recurrent_payment = ctx.accounts.payable.number_of_recurrent_payment.checked_sub(missed_payment_withdrawal).expect("msg");
-            
+            ctx.accounts.payable.number_of_recurrent_payment = ctx
+                .accounts
+                .payable
+                .number_of_recurrent_payment
+                .checked_sub(missed_payment_withdrawal)
+                .expect("Payable::Functions::Withdraw::Overflow Error");
+
             // transfer amount_to_transfer to payee
             let cpi_accounts = Transfer {
                 from: ctx.accounts.payable_ata.to_account_info(),
@@ -315,11 +327,20 @@ pub mod payable {
                 CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds),
                 amount_to_transfer as u64,
             )?;
+
+            emit!(PayableWithdrawal {
+                payable_idx: ctx.accounts.payable.payable_idx,
+                creator: ctx.accounts.payable.creator,
+                payer: ctx.accounts.payer.key(),
+                valid_token: ctx.accounts.valid_token_mint.key(),
+                amount: amount_to_transfer
+            });
         } else {
             // update payment remaining
-            ctx.accounts.payable.number_of_recurrent_payment = ctx.accounts.payable.number_of_recurrent_payment - 1;
+            ctx.accounts.payable.number_of_recurrent_payment =
+                ctx.accounts.payable.number_of_recurrent_payment - 1;
 
-            // update status 
+            // update status
             ctx.accounts.payable.status = 2;
 
             // transfer amount to payee
@@ -334,12 +355,20 @@ pub mod payable {
                 ctx.accounts.payable.amount as u64,
             )?;
 
-            emit!(PayableCompleted{
+            emit!(PayableCompleted {
                 payable_idx: ctx.accounts.payable.payable_idx,
                 creator: ctx.accounts.payable.creator,
                 payer: ctx.accounts.payer.key(),
                 valid_token: ctx.accounts.payable.valid_payment_token,
-            })
+            });
+
+            emit!(PayableWithdrawal {
+                payable_idx: ctx.accounts.payable.payable_idx,
+                creator: ctx.accounts.payable.creator,
+                payer: ctx.accounts.payer.key(),
+                valid_token: ctx.accounts.valid_token_mint.key(),
+                amount: ctx.accounts.payable.amount
+            });
         }
 
         Ok(())
@@ -522,7 +551,7 @@ pub struct Payable {
 }
 
 impl Counter {
-    pub const LEN: usize = (1 + 16);
+    pub const LEN: usize = (1 + 8);
 }
 
 impl Payable {
@@ -561,11 +590,6 @@ pub struct PayableAccepted {
 }
 
 #[event]
-pub struct CancelPeriodOver {
-    pub payable_idx: u64,
-}
-
-#[event]
 pub struct PayableWithdrawal {
     pub payable_idx: u64,
     pub creator: Pubkey,
@@ -586,5 +610,5 @@ pub struct PayableCompleted {
 pub enum Error {
     CyclicPayable,
     WithdrawalTimeNotReached,
-    CompletedPayble
+    CompletedPayable,
 }

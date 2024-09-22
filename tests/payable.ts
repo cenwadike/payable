@@ -209,8 +209,11 @@ const TestProgram = async () => {
     systemProgram: SystemProgram.programId
   }).signers([payeeSig]).rpc()
   console.log("-----------------------PAYABLE WITHDRAWAL SUCCESSFUL:", withdrawTx.toString());
-
 };
+
+function sleep(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}
 
 const runTest = async () => {
   try {
@@ -223,7 +226,3 @@ const runTest = async () => {
 }
 
 runTest()
-
-function sleep(time) {
-  return new Promise(resolve => setTimeout(resolve, time));
-}
