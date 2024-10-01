@@ -347,3 +347,70 @@ anchor test --skip-local-validator
 ```bash
 anchor deploy
 ```
+
+### Deploy to devnet
+
+- Edit **Anchor.toml**
+
+1. cluster = "devnet"
+2. wallet = "~/.config/solana/id.json" is the location of your solana key pair
+3.[programs.devnet]
+
+Your Anchor.toml should look like so:
+
+```bash
+[toolchain]
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.devnet]
+payable = "8rrFrtdFK3x8NBFEvaqznHg9Q9Tf2ij6bHEv2FCHotgJ"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "/Users/cenwadike/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+```
+
+- Config solana to devnet by running this command
+
+```bash
+solana config set --keypair ~/.config/solana/id.json  --url devnet
+```
+
+- View solana config and confirm it's on devnet
+
+```bash 
+solana config get 
+```
+
+- Run the command to get testnet SOL
+
+```bash
+solana airdrop 5
+```
+
+- Run the command to deploy to testnet
+
+```bash
+anchor deploy
+```
+
+- View deployed contract using this command
+
+```bash
+solana program show <Program Id>
+```
+
+## Devnet contract address
+
+```bash
+8rrFrtdFK3x8NBFEvaqznHg9Q9Tf2ij6bHEv2FCHotgJ
+```
